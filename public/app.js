@@ -244,11 +244,20 @@
       '<div class="row"><label class="small muted" for="pSel">Показать</label><select id="pSel" class="btn" style="font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)">' +
       App.periods.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === cur.id ? ' selected' : '') + '>' + esc(p.label) + (p.source === 'import' ? ' (импорт)' : '') + '</option>'; }).join('') + '</select></div></div>';
     var pf = App.files.filter(function (f) { return f.periodId === cur.id; });
-    html += '<details class="panel" id="filesBox"' + (dashState.filesOpen ? ' open' : '') + '><summary style="cursor:pointer;font-weight:600">Excel-файлы периода (' + pf.length + ')</summary>' +
-      (pf.length ? '<div style="display:grid;gap:6px;margin-top:10px">' + pf.map(function (f) {
-        return '<div class="row" style="justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line)"><span style="min-width:0;overflow-wrap:anywhere"><span class="badge">' + (f.kind === 'svodny' ? 'готовый сводный' : 'исходный') + '</span> ' + esc(f.name) + ' <span class="small muted">· ' + nf(f.size / 1024) + ' КБ</span></span>' +
-          '<span class="row"><button type="button" class="primary" data-fdl="' + esc(f.id) + '">Скачать</button><button type="button" class="ghost danger" data-fdel="' + esc(f.id) + '">' + (dashState.fdel === f.id ? 'Точно удалить?' : 'Удалить') + '</button></span></div>';
-      }).join('') + '</div>' : '<p class="small muted" style="margin:8px 0 0">Файлы сохраняются сюда, когда вы нажимаете «Сохранить в дашборд» во вкладке «Сводный» или импортируете готовый сводный в «Настройках».</p>') + '</details>';
+    function fileRow(f) {
+      return '<div class="row" style="justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line)"><span style="min-width:0;overflow-wrap:anywhere"><span class="badge">' + (f.kind === 'svodny' ? 'готовый сводный' : 'исходный') + '</span> ' + esc(f.name) + ' <span class="small muted">· ' + nf(f.size / 1024) + ' КБ · ' + new Date(f.added).toLocaleDateString('ru-RU') + '</span></span>' +
+        '<span class="row"><button type="button" class="primary" data-fdl="' + esc(f.id) + '">Скачать</button><button type="button" class="ghost danger" data-fdel="' + esc(f.id) + '">' + (dashState.fdel === f.id ? 'Точно удалить?' : 'Удалить') + '</button></span></div>';
+    }
+    var others = {};
+    App.files.forEach(function (f) { if (f.periodId !== cur.id) (others[f.periodId] = others[f.periodId] || []).push(f); });
+    var labelOf = function (id) { var q = App.periods.find(function (x) { return x.id === id; }); return q ? q.label : id; };
+    html += '<details class="panel" id="filesBox"' + (dashState.filesOpen ? ' open' : '') + '><summary style="cursor:pointer;font-weight:600">Excel-файлы: ' + esc(cur.label) + ' (' + pf.length + ')' + (App.files.length > pf.length ? ' · всего в архиве ' + App.files.length : '') + '</summary>' +
+      '<p class="small muted" style="margin:8px 0 0">Файлы хранятся на сайте и видны всем, кто входит по паролю, с любого устройства.</p>' +
+      (pf.length ? '<div style="display:grid;gap:6px;margin-top:10px">' + pf.map(fileRow).join('') + '</div>' : '<p class="small muted" style="margin:8px 0 0">Для этого периода файлов нет.</p>') +
+      '<div class="field" style="margin-top:12px"><label for="arcAdd">Добавить Excel-файл в архив этого периода</label><input type="file" id="arcAdd" accept=".xlsx,.xls" multiple></div>' +
+      Object.keys(others).sort().reverse().map(function (pid) {
+        return '<h3 style="margin:16px 0 4px;font-size:15px">' + esc(labelOf(pid)) + ' <span class="small muted">(' + others[pid].length + ')</span></h3>' + others[pid].map(fileRow).join('');
+      }).join('') + '</details>';
     html += '<div class="kpis">' +
       kpi('Остаток на ' + (cur.closeLabel || 'конец'), nf(t.close) + ' шт', A.items.length + ' позиций') +
       kpi('Продажи за период', nf(t.sales) + ' шт', delta(t.sales, tp && tp.sales) || ('А ' + nf(t.a) + ' · ВС ' + nf(t.vs))) +
@@ -281,6 +290,12 @@
 
     $('pSel').onchange = function () { dashState.pid = this.value; renderDash(); };
     $('filesBox').ontoggle = function () { dashState.filesOpen = this.open; };
+    $('arcAdd').onchange = function () {
+      var list = Array.prototype.slice.call(this.files); if (!list.length) return;
+      dashState.filesOpen = true; toast('Загружаю файлы…');
+      Promise.all(list.map(function (f) { return f.arrayBuffer().then(function (buf) { return App.uploadFile(cur.id, 'source', f.name, buf); }).then(function () { return null; }, function (e) { return e.message; }); }))
+        .then(function (errs) { errs = errs.filter(Boolean); toast(errs.length ? 'Не загрузились: ' + errs.join('; ') : 'Файлов добавлено: ' + list.length); renderDash(); });
+    };
     box.querySelectorAll('[data-fdl]').forEach(function (b) { b.onclick = function () { b.disabled = true; App.downloadFile(b.dataset.fdl).then(function () { b.disabled = false; }, function (e) { b.disabled = false; toast(e.message); }); }; });
     box.querySelectorAll('[data-fdel]').forEach(function (b) {
       b.onclick = function () {
