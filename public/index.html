@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Magic Spices — дашборд</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="description" content="Склад, продажи и помощник Magic Spices">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -147,6 +149,8 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .topbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 6; background: var(--surface); border-bottom: 1px solid var(--line); }
 .topbar-in { max-width: 1180px; margin: 0 auto; min-height: var(--bar); padding-block: 8px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; align-items: center; gap: 6px 18px; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; color: var(--ink); text-decoration: none; }
+.logo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: none; background: #fff; }
+.login .logo { width: 84px; height: 84px; }
 .mark { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-weight: 700; font-size: 14px; letter-spacing: -.02em; }
 nav.tabs { display: flex; gap: 2px; flex-wrap: wrap; flex: 1 1 auto; }
 nav.tabs a { text-decoration: none; color: var(--muted); font-weight: 500; padding: 7px 11px; border-radius: 8px; }
@@ -242,7 +246,7 @@ select { font: inherit; }
 </head>
 <body>
 <div id="loginView" class="login" hidden>
-  <div class="brand"><span class="mark">MS</span><span>Magic Spices</span></div>
+  <div class="brand"><img class="logo" src="logo.png" alt="Волшебное дерево" width="40" height="40"><span>Magic Spices</span></div>
   <h1>Вход</h1>
   <p class="sub">Введите пароль сайта.</p>
   <form id="loginForm" style="display:grid;gap:10px">
@@ -255,7 +259,7 @@ select { font: inherit; }
 
 <div id="appView" hidden>
   <header class="topbar"><div class="topbar-in">
-    <a class="brand" href="#dash"><span class="mark">MS</span><span>Magic Spices</span></a>
+    <a class="brand" href="#dash"><img class="logo" src="logo.png" alt="Волшебное дерево" width="40" height="40"><span>Magic Spices</span></a>
     <nav class="tabs" aria-label="Разделы">
       <a href="#dash">Дашборд</a><a href="#stock">Склад</a><a href="#ai">Помощник</a><a href="#calc">Сводный</a><a href="#pages">Страницы</a><a href="#settings">Настройки</a>
     </nav>
