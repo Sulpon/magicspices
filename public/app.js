@@ -25,7 +25,7 @@
   }
 
   // ======================= API =======================
-  var App = window.App = { key: lsGet('ms.key', ''), status: null, periods: [], settings: {}, pages: [] };
+  var App = window.App = { key: lsGet('ms.key', ''), status: null, periods: [], settings: {}, pages: [], files: [] };
   function api(path, opts) {
     opts = opts || {};
     var h = { 'x-site-key': App.key };
@@ -56,6 +56,27 @@
       sortPeriods(); route(); return p;
     });
   };
+  function toB64(u8) { var s = '', c = 0x8000; for (var i = 0; i < u8.length; i += c) s += String.fromCharCode.apply(null, u8.subarray(i, i + c)); return btoa(s); }
+  function h36(str) { var h = 0; for (var i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+  App.uploadFile = function (periodId, kind, name, data) {
+    var u8 = data instanceof Uint8Array ? data : new Uint8Array(data);
+    if (u8.length > 3.4 * 1024 * 1024) return Promise.reject(new Error(name + ': больше 3,4 МБ'));
+    var id = (periodId + '_' + kind + '_' + h36(kind === 'svodny' ? 'svodny' : name + u8.length)).replace(/[^A-Za-z0-9_-]/g, '_');
+    return api('files/' + id, { method: 'PUT', body: { name: name, kind: kind, periodId: periodId, b64: toB64(u8) } }).then(function (r) {
+      var i = App.files.findIndex(function (x) { return x.id === id; });
+      if (i >= 0) App.files[i] = r.file; else App.files.push(r.file);
+      return r.file;
+    });
+  };
+  App.downloadFile = function (id) {
+    return api('files/' + id).then(function (f) {
+      var bin = atob(f.b64), u8 = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      var url = URL.createObjectURL(new Blob([u8], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      var a = document.createElement('a'); a.href = url; a.download = f.name; a.style.display = 'none';
+      document.body.appendChild(a); a.click(); setTimeout(function () { a.remove(); URL.revokeObjectURL(url); }, 1500);
+    });
+  };
   function sortPeriods() { App.periods.sort(function (a, b) { return a.months[a.months.length - 1] - b.months[b.months.length - 1]; }); }
 
   // ======================= вход =======================
@@ -73,8 +94,8 @@
   $('logout').addEventListener('click', function () { App.key = ''; lsSet('ms.key', ''); showLogin(''); });
 
   function loadAll() {
-    return Promise.all([api('periods'), api('settings'), api('pages')]).then(function (r) {
-      App.periods = r[0] || []; App.settings = r[1] || {}; App.pages = r[2] || [];
+    return Promise.all([api('periods'), api('settings'), api('pages'), api('files').catch(function () { return []; })]).then(function (r) {
+      App.periods = r[0] || []; App.settings = r[1] || {}; App.pages = r[2] || []; App.files = r[3] || [];
       sortPeriods();
       $('loginView').hidden = true; $('appView').hidden = false; document.body.classList.remove('locked');
       if (window.Calc) window.Calc.reload();
@@ -83,13 +104,14 @@
   }
 
   // ======================= маршруты =======================
-  var VIEWS = ['dash', 'ai', 'calc', 'pages', 'settings'];
+  var VIEWS = ['dash', 'stock', 'ai', 'calc', 'pages', 'settings'];
   function route() {
     var h = (location.hash || '#dash').slice(1).split('/');
     var v = VIEWS.indexOf(h[0]) >= 0 ? h[0] : 'dash';
     VIEWS.forEach(function (x) { $('v-' + x).hidden = x !== v; });
     document.querySelectorAll('nav.tabs a').forEach(function (a) { a.setAttribute('aria-current', a.getAttribute('href') === '#' + v ? 'page' : 'false'); });
     if (v === 'dash') renderDash();
+    if (v === 'stock') renderStock();
     if (v === 'ai') renderAI();
     if (v === 'pages') renderPages(h[1]);
     if (v === 'settings') renderSettings();
@@ -221,6 +243,12 @@
     var html = '<div class="periodbar"><div style="display:grid;gap:2px"><span class="small muted">Период</span><span class="period">' + esc(cur.label) + '</span></div>' +
       '<div class="row"><label class="small muted" for="pSel">Показать</label><select id="pSel" class="btn" style="font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)">' +
       App.periods.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === cur.id ? ' selected' : '') + '>' + esc(p.label) + (p.source === 'import' ? ' (импорт)' : '') + '</option>'; }).join('') + '</select></div></div>';
+    var pf = App.files.filter(function (f) { return f.periodId === cur.id; });
+    html += '<details class="panel" id="filesBox"' + (dashState.filesOpen ? ' open' : '') + '><summary style="cursor:pointer;font-weight:600">Excel-файлы периода (' + pf.length + ')</summary>' +
+      (pf.length ? '<div style="display:grid;gap:6px;margin-top:10px">' + pf.map(function (f) {
+        return '<div class="row" style="justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line)"><span style="min-width:0;overflow-wrap:anywhere"><span class="badge">' + (f.kind === 'svodny' ? 'готовый сводный' : 'исходный') + '</span> ' + esc(f.name) + ' <span class="small muted">· ' + nf(f.size / 1024) + ' КБ</span></span>' +
+          '<span class="row"><button type="button" class="primary" data-fdl="' + esc(f.id) + '">Скачать</button><button type="button" class="ghost danger" data-fdel="' + esc(f.id) + '">' + (dashState.fdel === f.id ? 'Точно удалить?' : 'Удалить') + '</button></span></div>';
+      }).join('') + '</div>' : '<p class="small muted" style="margin:8px 0 0">Файлы сохраняются сюда, когда вы нажимаете «Сохранить в дашборд» во вкладке «Сводный» или импортируете готовый сводный в «Настройках».</p>') + '</details>';
     html += '<div class="kpis">' +
       kpi('Остаток на ' + (cur.closeLabel || 'конец'), nf(t.close) + ' шт', A.items.length + ' позиций') +
       kpi('Продажи за период', nf(t.sales) + ' шт', delta(t.sales, tp && tp.sales) || ('А ' + nf(t.a) + ' · ВС ' + nf(t.vs))) +
@@ -252,6 +280,16 @@
     box.innerHTML = html;
 
     $('pSel').onchange = function () { dashState.pid = this.value; renderDash(); };
+    $('filesBox').ontoggle = function () { dashState.filesOpen = this.open; };
+    box.querySelectorAll('[data-fdl]').forEach(function (b) { b.onclick = function () { b.disabled = true; App.downloadFile(b.dataset.fdl).then(function () { b.disabled = false; }, function (e) { b.disabled = false; toast(e.message); }); }; });
+    box.querySelectorAll('[data-fdel]').forEach(function (b) {
+      b.onclick = function () {
+        var id = b.dataset.fdel;
+        if (dashState.fdel !== id) { dashState.fdel = id; dashState.filesOpen = true; renderDash(); return; }
+        dashState.fdel = null;
+        api('files/' + id, { method: 'DELETE' }).then(function () { App.files = App.files.filter(function (f) { return f.id !== id; }); dashState.filesOpen = true; renderDash(); toast('Файл удалён'); }, function (e) { toast(e.message); });
+      };
+    });
     box.querySelectorAll('#unitSeg button').forEach(function (b) { b.onclick = function () { dashState.unit = b.dataset.u; renderDash(); }; });
     box.querySelectorAll('#topSeg button').forEach(function (b) { b.onclick = function () { dashState.topBy = b.dataset.t; renderDash(); }; });
     box.querySelectorAll('[data-prod]').forEach(function (td) { td.onclick = function () { openProduct(td.dataset.prod); }; });
@@ -476,7 +514,7 @@
   }
 
   // ======================= настройки =======================
-  var perDel = null, imported = null;
+  var perDel = null, imported = null, impName = '', impBuf = null;
   function renderSettings() {
     var box = $('settings');
     box.innerHTML = '<h1>Настройки</h1>' +
@@ -502,6 +540,7 @@
     $('impFile').onchange = function () {
       var f = this.files[0]; if (!f) return;
       f.arrayBuffer().then(function (buf) {
+        impName = f.name; impBuf = buf;
         var ps = [];
         try { ps = Core.readPeriods(new Uint8Array(buf), f.name); } catch (e) { $('impBox').innerHTML = '<p class="err">Не удалось прочитать: ' + esc(e.message) + '</p>'; return; }
         if (!ps.length) { $('impBox').innerHTML = '<p class="err">Не нашёл в файле сводный: нужна таблица с «Номенклатура» и «Остатки на …».</p>'; return; }
@@ -513,10 +552,58 @@
             '<button type="button" class="primary" data-imp="' + i + '">' + (ex ? 'Заменить сохранённый' : 'Сохранить') + '</button></div>';
         }).join('');
         $('impBox').querySelectorAll('[data-imp]').forEach(function (b) {
-          b.onclick = function () { b.disabled = true; App.savePeriod(imported[+b.dataset.imp]).then(function () { toast('Сохранено'); renderSettings(); }, function (e) { b.disabled = false; toast(e.message); }); };
+          b.onclick = function () { b.disabled = true; var ip = imported[+b.dataset.imp]; App.savePeriod(ip).then(function () { return App.uploadFile(ip.id, 'svodny', impName, impBuf).catch(function (e) { toast('Файл не сохранился в архив: ' + e.message); }); }).then(function () { toast('Сохранено'); renderSettings(); }, function (e) { b.disabled = false; toast(e.message); }); };
         });
       });
     };
+  }
+
+  // ======================= склад =======================
+  var stockState = { pid: null, q: '', f: 'all' };
+  function renderStock() {
+    var box = $('stock');
+    if (!App.periods.length) { box.innerHTML = '<div class="empty-state"><h2>Склада пока нет</h2><p class="muted">Остатки появятся после того, как вы сохраните сводный в дашборд.</p><div class="row"><a class="lbtn primary" href="#calc">Собрать сводный</a></div></div>'; return; }
+    var cur = App.periods.find(function (p) { return p.id === stockState.pid; }) || App.periods[App.periods.length - 1];
+    var counts = App.settings.stockCounts = App.settings.stockCounts || {};
+    var rows = cur.rows.map(function (r) { var k = Core.key(r.name), c = counts[k]; return { r: r, k: k, c: c, fact: c && c.q != null ? c.q : null }; });
+    var tot = rows.reduce(function (a, x) { return a + x.r.close; }, 0), neg = rows.filter(function (x) { return x.r.close < 0; }).length, zero = rows.filter(function (x) { return x.r.close === 0; }).length;
+    var diff = rows.filter(function (x) { return x.fact != null && x.fact !== x.r.close; }).length;
+    var q = stockState.q.trim().toLowerCase();
+    var list = rows.filter(function (x) {
+      if (q && x.r.name.toLowerCase().indexOf(q) < 0) return false;
+      if (stockState.f === 'neg') return x.r.close < 0;
+      if (stockState.f === 'zero') return x.r.close === 0;
+      if (stockState.f === 'diff') return x.fact != null && x.fact !== x.r.close;
+      return true;
+    });
+    box.innerHTML = '<div class="periodbar"><h1 style="margin:0">Склад</h1><div class="row"><label class="small muted" for="stP">Остатки на</label><select id="stP" style="font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)">' +
+      App.periods.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === cur.id ? ' selected' : '') + '>' + esc(p.closeLabel || p.label) + ' · ' + esc(p.label) + '</option>'; }).join('') + '</select></div></div>' +
+      '<div class="kpis">' + kpi('Остаток всего', nf(tot) + ' шт', rows.length + ' позиций') + kpi('В минусе', String(neg), neg ? 'проверьте приход' : 'нет', neg ? 'alert' : '') + kpi('Нулевой остаток', String(zero), '') + kpi('Расхождения с фактом', String(diff), 'по введённому вручную') + '</div>' +
+      '<section class="panel"><p class="small muted" style="margin:0 0 10px">«Остаток» считается из сводного. В столбец «Факт» впишите, сколько реально лежит на складе: значение сохранится на сайте для всех, а разница покажет расхождение.</p>' +
+      '<div class="row" style="margin-bottom:10px"><input id="stQ" type="search" placeholder="Найти позицию" value="' + esc(stockState.q) + '" style="font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);min-width:200px;flex:1">' +
+      '<div class="seg" id="stF">' + [['all', 'Все'], ['neg', 'Минус'], ['zero', 'Ноль'], ['diff', 'Расхождения']].map(function (x) { return '<button type="button" data-f="' + x[0] + '" aria-pressed="' + (stockState.f === x[0]) + '">' + x[1] + '</button>'; }).join('') + '</div></div>' +
+      '<div class="scrollbox" style="max-height:none"><table class="dtable"><thead><tr><th class="n">№</th><th>Позиция</th><th class="n">Остаток</th><th class="n">Факт</th><th class="n">Разница</th><th>Подсчёт</th></tr></thead><tbody>' +
+      (list.length ? list.map(function (x, i) {
+        var d = x.fact != null ? x.fact - x.r.close : null;
+        return '<tr><td class="n">' + (i + 1) + '</td><td class="link" data-prod="' + esc(x.r.name) + '">' + esc(x.r.name) + '</td><td class="n" style="' + (x.r.close < 0 ? 'color:var(--neg-ink);font-weight:600' : '') + '">' + nf(x.r.close) + '</td>' +
+          '<td class="n"><input type="number" step="1" data-k="' + esc(x.k) + '" value="' + (x.fact == null ? '' : x.fact) + '" aria-label="Факт: ' + esc(x.r.name) + '" style="width:84px;font:inherit;text-align:right;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)"></td>' +
+          '<td class="n" id="d_' + esc(x.k).replace(/[^\w]/g, '_') + '" style="' + (d ? 'color:var(--neg-ink)' : '') + '">' + (d == null ? '—' : (d > 0 ? '+' : '') + nf(d)) + '</td><td class="small muted">' + (x.c && x.c.d ? esc(x.c.d) : '') + '</td></tr>';
+      }).join('') : '<tr><td colspan="6" class="muted">Ничего не найдено</td></tr>') + '</tbody></table></div></section>';
+    $('stP').onchange = function () { stockState.pid = this.value; renderStock(); };
+    $('stQ').oninput = function () { stockState.q = this.value; var pos = this.selectionStart; renderStock(); var el = $('stQ'); el.focus(); el.setSelectionRange(pos, pos); };
+    box.querySelectorAll('#stF button').forEach(function (b) { b.onclick = function () { stockState.f = b.dataset.f; renderStock(); }; });
+    box.querySelectorAll('[data-prod]').forEach(function (td) { td.onclick = function () { openProduct(td.dataset.prod); }; });
+    box.querySelectorAll('input[data-k]').forEach(function (inp) {
+      inp.onchange = function () {
+        var k = inp.dataset.k, v = inp.value.trim();
+        if (v === '') delete counts[k]; else counts[k] = { q: parseFloat(v), d: new Date().toLocaleDateString('ru-RU') };
+        App.saveSettings({ stockCounts: counts });
+        var y = inp.closest('tr'), x = rows.find(function (r) { return r.k === k; });
+        var cell = y.children[4], d = v === '' ? null : parseFloat(v) - x.r.close;
+        cell.textContent = d == null ? '—' : (d > 0 ? '+' : '') + nf(d); cell.style.color = d ? 'var(--neg-ink)' : '';
+        y.children[5].textContent = v === '' ? '' : counts[k].d;
+      };
+    });
   }
 
   // ======================= запуск =======================

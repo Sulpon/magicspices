@@ -27,7 +27,7 @@
         try { sheets = Core.readWorkbook(new Uint8Array(buf), f.name); }
         catch (e) { sheets = [{ kind: 'error', file: f.name, warnings: ['Не удалось открыть файл: ' + e.message], items: [] }]; }
         if (!sheets.length) sheets = [{ kind: 'unknown', file: f.name, warnings: ['Не узнал формат: нет ни накладной, ни отчёта о реализации, ни сводного'], items: [] }];
-        files.push({ id: Math.random().toString(36).slice(2), name: f.name, size: f.size, sheets: sheets });
+        files.push({ id: Math.random().toString(36).slice(2), name: f.name, size: f.size, buf: buf, sheets: sheets });
       });
     });
     Promise.all(jobs).then(refresh);
@@ -260,8 +260,16 @@
     var exists = App.periods.some(function (x) { return x.id === p.id; });
     if (exists && !saveArmed) { saveArmed = true; btn.textContent = 'Заменить «' + p.label + '»?'; return; }
     saveArmed = false; btn.disabled = true; btn.textContent = 'Сохраняю…';
-    App.savePeriod(p).then(function () { showMsg('Сохранено в дашборд: ' + p.label + '. Откройте вкладку «Дашборд».', 'ok'); },
-      function (e) { showMsg('Не сохранилось: ' + e.message, 'err'); })
+    var fname = fileName(), real = files.slice();
+    App.savePeriod(p).then(function () {
+      btn.textContent = 'Сохраняю файлы…';
+      var jobs = real.map(function (f) { return App.uploadFile(p.id, 'source', f.name, f.buf); });
+      jobs.push(Core.toExcel(model).then(function (b) { return App.uploadFile(p.id, 'svodny', fname, b); }));
+      return Promise.all(jobs.map(function (j) { return j.then(function () { return null; }, function (e) { return e.message; }); })).then(function (errs) {
+        errs = errs.filter(Boolean);
+        showMsg('Сохранено в дашборд: ' + p.label + '. Файлов в архиве: ' + (jobs.length - errs.length) + (errs.length ? '. Не сохранились: ' + errs.join('; ') : '') + '. Скачать их можно на вкладке «Дашборд».', errs.length ? 'err' : 'ok');
+      });
+    }, function (e) { showMsg('Не сохранилось: ' + e.message, 'err'); })
       .then(function () { btn.disabled = false; btn.textContent = 'Сохранить в дашборд'; });
   });
   window.Calc = { reload: function () { overrides = (window.App && App.settings.overrides) || {}; refresh(); } };

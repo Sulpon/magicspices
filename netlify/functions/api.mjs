@@ -64,6 +64,36 @@ export default async (req) => {
       return err(405, "Метод не поддерживается");
     }
 
+    // ---- архив Excel-файлов (исходные и готовые сводные) ----
+    if (section === "files") {
+      if (m === "GET" && !id) return json((await s.get("files-index", { type: "json" })) || []);
+      if (!id || !ID_RE.test(id)) return err(400, "Неверный идентификатор");
+      if (m === "GET") {
+        const f = await s.get("files/" + id, { type: "json" });
+        return f ? json(f) : err(404, "Файл не найден");
+      }
+      if (m === "PUT") {
+        const p = await body(req);
+        if (typeof p.b64 !== "string" || !p.b64) return err(400, "Нет содержимого файла");
+        if (p.b64.length > 4.6 * 1024 * 1024) return err(413, "Файл больше 3,4 МБ — слишком большой для архива");
+        const rec = { id, name: String(p.name || id).slice(0, 200), kind: String(p.kind || "source").slice(0, 20), periodId: String(p.periodId || "").slice(0, 80), size: Math.floor(p.b64.length * 3 / 4), added: Date.now(), b64: p.b64 };
+        await s.setJSON("files/" + id, rec);
+        const meta = { id, name: rec.name, kind: rec.kind, periodId: rec.periodId, size: rec.size, added: rec.added };
+        const idx = (await s.get("files-index", { type: "json" })) || [];
+        const i = idx.findIndex((x) => x.id === id);
+        if (i >= 0) idx[i] = meta; else idx.push(meta);
+        await s.setJSON("files-index", idx);
+        return json({ ok: true, file: meta });
+      }
+      if (m === "DELETE") {
+        await s.delete("files/" + id);
+        const idx = ((await s.get("files-index", { type: "json" })) || []).filter((x) => x.id !== id);
+        await s.setJSON("files-index", idx);
+        return json({ ok: true });
+      }
+      return err(405, "Метод не поддерживается");
+    }
+
     // ---- загруженные страницы ----
     if (section === "pages") {
       if (m === "GET" && !id) {
