@@ -76,10 +76,21 @@
           (s.warnings && s.warnings.length ? '<div class="warn">' + s.warnings.map(esc).join('<br>') + '</div>' : '') + '</div>' +
           '<div class="row">';
         if (s.kind === 'report') html += '<div class="seg"><button type="button" data-ch="A" aria-pressed="' + (s.channel === 'A') + '">А</button><button type="button" data-ch="VS" aria-pressed="' + (s.channel === 'VS') + '">ВС</button></div>';
+        if ((s.kind === 'prihod' || s.kind === 'report') && !f.virtual) {
+          if (s.ym0 == null) s.ym0 = s.ym;
+          var mv = Math.floor(s.ym / 12) + '-' + ('0' + (s.ym % 12 + 1)).slice(-2);
+          html += '<label class="small muted" style="display:grid;gap:2px">Записать за месяц<input type="month" data-ym="1" value="' + mv + '" style="font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)"></label>';
+          if (s.ym !== s.ym0) html += '<span class="badge" title="Месяц в самом файле">в файле: ' + esc(monthY(s.ym0)) + '</span>';
+        }
         if (i === 0 && !f.virtual) html += '<button class="ghost" type="button" data-rm="1" aria-label="Убрать файл">Убрать</button>';
         html += '</div>';
         el.innerHTML = html;
         el.querySelectorAll('[data-ch]').forEach(function (b) { b.addEventListener('click', function () { s.channel = b.dataset.ch; refresh(); }); });
+        var mi = el.querySelector('[data-ym]');
+        if (mi) mi.addEventListener('change', function () {
+          var m = /^(\d{4})-(\d{2})$/.exec(mi.value); if (!m) return;
+          s.ym = +m[1] * 12 + (+m[2] - 1); refresh();
+        });
         var rm = el.querySelector('[data-rm]');
         if (rm) rm.addEventListener('click', function () { files = files.filter(function (x) { return x !== f; }); refresh(); });
         box.appendChild(el);
