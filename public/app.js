@@ -1,4 +1,4 @@
-/* Magic Spices — дашборд, помощник, страницы, настройки */
+/* Волшебное дерево — дашборд, помощник, страницы, настройки */
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
@@ -620,6 +620,19 @@
       };
     });
   }
+
+  // кнопка выбора файла на русском (родная подпись зависит от языка браузера)
+  function ruFile(inp) {
+    if (inp.dataset.ru) return; inp.dataset.ru = '1';
+    inp.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none';
+    var b = document.createElement('button'), n = document.createElement('span');
+    b.type = 'button'; b.textContent = 'Выбрать файл'; n.className = 'small muted'; n.textContent = ' Файл не выбран'; n.style.marginLeft = '8px';
+    b.onclick = function () { inp.click(); };
+    inp.addEventListener('change', function () { n.textContent = ' ' + (inp.files.length > 1 ? 'Файлов: ' + inp.files.length : inp.files[0] ? inp.files[0].name : 'Файл не выбран'); });
+    inp.parentNode.insertBefore(b, inp); inp.parentNode.insertBefore(n, inp);
+  }
+  new MutationObserver(function () { document.querySelectorAll('#settings input[type=file], #dash input[type=file]').forEach(ruFile); })
+    .observe(document.body, { childList: true, subtree: true });
 
   // ======================= запуск =======================
   fetch('/api/status').then(function (r) { return r.json(); }).then(function (st) {

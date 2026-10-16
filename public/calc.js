@@ -78,18 +78,20 @@
         if (s.kind === 'report') html += '<div class="seg"><button type="button" data-ch="A" aria-pressed="' + (s.channel === 'A') + '">А</button><button type="button" data-ch="VS" aria-pressed="' + (s.channel === 'VS') + '">ВС</button></div>';
         if ((s.kind === 'prihod' || s.kind === 'report') && !f.virtual) {
           if (s.ym0 == null) s.ym0 = s.ym;
-          var mv = Math.floor(s.ym / 12) + '-' + ('0' + (s.ym % 12 + 1)).slice(-2);
-          html += '<label class="small muted" style="display:grid;gap:2px">Записать за месяц<input type="month" data-ym="1" value="' + mv + '" style="font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)"></label>';
+          var y0 = Math.floor(s.ym0 / 12), sel = 'font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)';
+          html += '<div class="small muted" style="display:grid;gap:2px">Записать за месяц<span class="row" style="gap:6px"><select data-ym="m" aria-label="Месяц" style="' + sel + '">' +
+            Core.MONTHS_NOM.map(function (n, mi) { return '<option value="' + mi + '"' + (mi === s.ym % 12 ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select>' +
+            '<select data-ym="y" aria-label="Год" style="' + sel + '">' + [y0 - 1, y0, y0 + 1].map(function (yy) { return '<option value="' + yy + '"' + (yy === Math.floor(s.ym / 12) ? ' selected' : '') + '>' + yy + '</option>'; }).join('') + '</select></span></div>';
           if (s.ym !== s.ym0) html += '<span class="badge" title="Месяц в самом файле">в файле: ' + esc(monthY(s.ym0)) + '</span>';
         }
         if (i === 0 && !f.virtual) html += '<button class="ghost" type="button" data-rm="1" aria-label="Убрать файл">Убрать</button>';
         html += '</div>';
         el.innerHTML = html;
         el.querySelectorAll('[data-ch]').forEach(function (b) { b.addEventListener('click', function () { s.channel = b.dataset.ch; refresh(); }); });
-        var mi = el.querySelector('[data-ym]');
-        if (mi) mi.addEventListener('change', function () {
-          var m = /^(\d{4})-(\d{2})$/.exec(mi.value); if (!m) return;
-          s.ym = +m[1] * 12 + (+m[2] - 1); refresh();
+        el.querySelectorAll('[data-ym]').forEach(function (sl) {
+          sl.addEventListener('change', function () {
+            s.ym = +el.querySelector('[data-ym="y"]').value * 12 + +el.querySelector('[data-ym="m"]').value; refresh();
+          });
         });
         var rm = el.querySelector('[data-rm]');
         if (rm) rm.addEventListener('click', function () { files = files.filter(function (x) { return x !== f; }); refresh(); });
