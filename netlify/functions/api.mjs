@@ -66,7 +66,24 @@ export default async (req) => {
 
     // ---- архив Excel-файлов (исходные и готовые сводные) ----
     if (section === "files") {
-      if (m === "GET" && !id) return json((await s.get("files-index", { type: "json" })) || []);
+      if (m === "GET" && !id) {
+        // Описание каждого файла лежит отдельной записью (без общего списка), чтобы параллельные загрузки не затирали друг друга.
+        const [fl, ml] = await Promise.all([s.list({ prefix: "files/" }), s.list({ prefix: "filemeta/" })]);
+        const have = new Set(ml.blobs.map((b) => b.key.slice(9)));
+        const metas = await Promise.all(ml.blobs.map((b) => s.get(b.key, { type: "json" })));
+        const out = metas.filter(Boolean);
+        // самолечение: файлы, у которых нет описания (потерялись из-за старого общего списка)
+        for (const b of fl.blobs) {
+          const fid = b.key.slice(6);
+          if (have.has(fid)) continue;
+          const rec = await s.get(b.key, { type: "json" });
+          if (!rec) continue;
+          const meta = { id: fid, name: rec.name, kind: rec.kind, periodId: rec.periodId, size: rec.size, added: rec.added };
+          await s.setJSON("filemeta/" + fid, meta);
+          out.push(meta);
+        }
+        return json(out.sort((a, b) => (b.added || 0) - (a.added || 0)));
+      }
       if (!id || !ID_RE.test(id)) return err(400, "Неверный идентификатор");
       if (m === "GET") {
         const f = await s.get("files/" + id, { type: "json" });
@@ -79,16 +96,11 @@ export default async (req) => {
         const rec = { id, name: String(p.name || id).slice(0, 200), kind: String(p.kind || "source").slice(0, 20), periodId: String(p.periodId || "").slice(0, 80), size: Math.floor(p.b64.length * 3 / 4), added: Date.now(), b64: p.b64 };
         await s.setJSON("files/" + id, rec);
         const meta = { id, name: rec.name, kind: rec.kind, periodId: rec.periodId, size: rec.size, added: rec.added };
-        const idx = (await s.get("files-index", { type: "json" })) || [];
-        const i = idx.findIndex((x) => x.id === id);
-        if (i >= 0) idx[i] = meta; else idx.push(meta);
-        await s.setJSON("files-index", idx);
+        await s.setJSON("filemeta/" + id, meta);
         return json({ ok: true, file: meta });
       }
       if (m === "DELETE") {
-        await s.delete("files/" + id);
-        const idx = ((await s.get("files-index", { type: "json" })) || []).filter((x) => x.id !== id);
-        await s.setJSON("files-index", idx);
+        await Promise.all([s.delete("files/" + id), s.delete("filemeta/" + id)]);
         return json({ ok: true });
       }
       return err(405, "Метод не поддерживается");
