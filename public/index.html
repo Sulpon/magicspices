@@ -301,6 +301,11 @@ select { font: inherit; }
     <div id="notes" class="small muted"></div>
   </section>
 
+  <section class="panel" id="filesPanel" hidden>
+    <div class="row spread"><h2>Файлы</h2><button class="ghost" id="clearAll" type="button">Очистить всё</button></div>
+    <div class="files" id="files"></div>
+  </section>
+
   <section class="panel" id="revPanel" hidden>
     <div class="row spread">
       <div style="display:grid;gap:4px;min-width:0"><h2 id="revTitle">Проверьте названия</h2>
@@ -315,11 +320,6 @@ select { font: inherit; }
     </div>
     <div class="rev" id="rev"></div>
     <datalist id="names"></datalist>
-  </section>
-
-  <section class="panel" id="filesPanel" hidden>
-    <div class="row spread"><h2>Файлы</h2><button class="ghost" id="clearAll" type="button">Очистить всё</button></div>
-    <div class="files" id="files"></div>
   </section>
 
   <section class="panel" id="tablePanel" hidden>
