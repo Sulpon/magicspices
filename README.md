@@ -52,7 +52,7 @@ Netlify → сайт → *Site configuration* → *Environment variables* → *A
 |---|---|---|
 | `SITE_PASSWORD` | да | Пароль для входа на сайт. Без него любой, кто знает адрес, увидит цифры и сможет тратить ваш баланс OpenAI. |
 | `OPENAI_API_KEY` | для чата | Ключ OpenAI: platform.openai.com → *API keys*. Без него чат выключен, подсказки на дашборде работают. |
-| `OPENAI_MODEL` | нет | Модель для чата. По умолчанию `gpt-5-mini`. |
+| `OPENAI_MODEL` | нет | Модель для чата. По умолчанию `gpt-6-luna`. |
 
 После изменения переменных сделайте новый деплой (*Deploys → Trigger deploy*).
 В кабинете OpenAI поставьте месячный лимит расходов (*Settings → Limits*), чтобы не было сюрпризов.

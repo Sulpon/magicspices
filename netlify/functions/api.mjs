@@ -2,7 +2,7 @@
 // Переменные окружения (Netlify → Site configuration → Environment variables):
 //   SITE_PASSWORD   — пароль для входа на сайт (обязательно задайте)
 //   OPENAI_API_KEY  — ключ OpenAI для чата (без него чат выключен, подсказки работают)
-//   OPENAI_MODEL    — модель, по умолчанию gpt-5-mini
+//   OPENAI_MODEL    — модель, по умолчанию gpt-6-luna
 import { getStore } from "@netlify/blobs";
 import { timingSafeEqual } from "node:crypto";
 
@@ -11,6 +11,14 @@ const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 
 function store() {
   return globalThis.__TEST_STORE__ || getStore({ name: "magicspices", consistency: "strong" });
+}
+const recentHits = new Map();
+function rateLimited(ip) {
+  const now = Date.now(), win = 10 * 60 * 1000, prev = (recentHits.get(ip) || []).filter((t) => now - t < win);
+  if (prev.length >= 30) return true;
+  prev.push(now); recentHits.set(ip, prev);
+  if (recentHits.size > 500) for (const [k, h] of recentHits) if (!h.some((t) => now - t < win)) recentHits.delete(k);
+  return false;
 }
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -40,7 +48,7 @@ export default async (req) => {
   const m = req.method;
   try {
     if (section === "status") {
-      return json({ ok: true, authorized: authorized(req), passwordSet: !!env("SITE_PASSWORD"), ai: !!env("OPENAI_API_KEY"), model: env("OPENAI_MODEL") || "gpt-5-mini" });
+      return json({ ok: true, authorized: authorized(req), passwordSet: !!env("SITE_PASSWORD"), ai: !!env("OPENAI_API_KEY"), model: env("OPENAI_MODEL") || "gpt-6-luna" });
     }
     if (!authorized(req)) return err(401, "Нужен пароль");
     const s = store();
@@ -157,7 +165,7 @@ export default async (req) => {
       const key = env("OPENAI_API_KEY");
       if (!key) return err(503, "Чат не настроен: добавьте OPENAI_API_KEY в настройках Netlify");
       const p = await body(req);
-      const model = env("OPENAI_MODEL") || "gpt-5-mini";
+      const model = env("OPENAI_MODEL") || "gpt-6-luna";
       const history = (Array.isArray(p.messages) ? p.messages : [])
         .filter((x) => x && (x.role === "user" || x.role === "assistant") && typeof x.content === "string")
         .slice(-12).map((x) => ({ role: x.role, content: x.content.slice(0, 8000) }));
@@ -170,15 +178,21 @@ export default async (req) => {
         "Когда советуешь, что заказать, объясняй расчёт: средние продажи в месяц, текущий остаток, на сколько месяцев хватит.",
         "ДАННЫЕ:\n" + context,
       ].join("\n");
-      const payload = { model, messages: [{ role: "system", content: system }, ...history] };
-      if (/^(gpt-5|o\d)/.test(model)) { payload.max_completion_tokens = 4000; payload.reasoning_effort = "low"; }
-      else { payload.max_tokens = 1500; payload.temperature = 0.2; }
-      const r = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + key }, body: JSON.stringify(payload),
+      if (rateLimited(req.headers.get("x-nf-client-connection-ip") || "unknown")) return err(429, "Слишком много запросов. Подождите несколько минут.");
+      const r = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + key },
+        body: JSON.stringify({ model, instructions: system, input: history, max_output_tokens: 3000, store: false }),
       });
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) return err(502, "OpenAI: " + (data.error && data.error.message || r.status));
-      const reply = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      if (!r.ok) {
+        const msg = (data.error && data.error.message) || String(r.status);
+        console.error("OpenAI API error", r.status, data.error && data.error.code);
+        if (r.status === 401) return err(502, "OpenAI отклонил API-ключ. Проверьте OPENAI_API_KEY в Netlify.");
+        if (r.status === 429) return err(429, "Закончился баланс или лимит OpenAI. Проверьте биллинг API на platform.openai.com.");
+        return err(502, "OpenAI: " + msg);
+      }
+      const reply = typeof data.output_text === "string" ? data.output_text.trim()
+        : (data.output || []).flatMap((x) => x.content || []).filter((c) => c.type === "output_text").map((c) => c.text).join("\n").trim();
       return json({ reply: reply || "(пустой ответ)", model, usage: data.usage || null });
     }
 
